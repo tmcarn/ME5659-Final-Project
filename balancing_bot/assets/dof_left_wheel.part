@@ -1,0 +1,13 @@
+{
+    "configuration": "default",
+    "documentId": "6f845d5dab9c190070bfae36",
+    "documentMicroversion": "e1fb959070664645b1a20c86",
+    "elementId": "f1e4372df8f925ae7d7ebbc1",
+    "fullConfiguration": "default",
+    "id": "MoE/mOVPq5qfEA9QJ",
+    "isStandardContent": false,
+    "name": "dof_left_wheel <1>",
+    "partId": "JKD",
+    "suppressed": false,
+    "type": "Part"
+}

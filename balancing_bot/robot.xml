@@ -1,0 +1,98 @@
+<?xml version="1.0" ?>
+<!-- Pyclops robot - MuJoCo model -->
+<!-- Originally generated using onshape-to-robot -->
+<!-- Onshape https://cad.onshape.com/documents/6f845d5dab9c190070bfae36/w/80e382d598c8042090f96ef2/e/c831616fce6e428b6b7712d2 -->
+<mujoco model="pyclops">
+
+  <compiler angle="radian" meshdir="assets" autolimits="true"/>
+
+  <option gravity="0 0 -9.81" timestep="0.002"/>
+
+  <statistic center="0.05 0 0.05" extent="0.3"/>
+
+
+  <default>
+    <default class="pyclops">
+      <joint frictionloss="0.1" armature="0.005"/>
+      <position kp="50" dampratio="1"/>
+      <default class="visual">
+        <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+      </default>
+      <default class="collision">
+        <geom group="3"/>
+      </default>
+    </default>
+  </default>
+
+  <asset>
+    <mesh file="base_link.stl"/>
+    <mesh file="dof_right_wheel.stl"/>
+    <mesh file="dof_left_wheel.stl"/>
+    <material name="base_link_material" rgba="0.615686 0.811765 0.929412 1"/>
+    <material name="dof_right_wheel_material" rgba="0.647059 0.647059 0.647059 1"/>
+    <material name="dof_left_wheel_material" rgba="0.647059 0.647059 0.647059 1"/>
+  </asset>
+
+  <worldbody>
+
+    <!-- Link base_link -->
+    <body name="base_link" pos="0 0 0.05" quat="1 0 0 0" childclass="pyclops">
+      <freejoint name="base_link_freejoint"/>
+      <inertial pos="0.05 0.000122352 0.0747451" mass="1.17694"
+                fullinertia="0.00378203 0.00453442 0.00121277 0 0 -7.23671e-06"/>
+
+      <!-- IMU site (mounted on the body frame) -->
+      <site name="imu_site" pos="0.05 0 0.075" size="0.005"/>
+
+      <!-- Part base_link -->
+      <geom type="mesh" class="visual" pos="0 0 0" quat="1 0 0 0"
+            mesh="base_link" material="base_link_material"/>
+      <geom type="mesh" class="collision" pos="0 0 0" quat="1 0 0 0"
+            mesh="base_link" material="base_link_material"/>
+
+      <!-- Link dof_right_wheel -->
+      <body name="dof_right_wheel" pos="0 0 0" quat="0.5 0.5 0.5 0.5">
+        <joint axis="0 0 1" name="right_wheel" range="-10 10"/>
+        <inertial pos="0 -0.000847611 -0.0122091" mass="0.132904"
+                  fullinertia="5.27258e-05 5.43198e-05 9.33527e-05 0 0 -8.77648e-07"/>
+        <geom type="mesh" class="visual" pos="0 0 0" quat="0.5 -0.5 -0.5 -0.5"
+              mesh="dof_right_wheel" material="dof_right_wheel_material"/>
+        <geom type="mesh" class="collision" pos="0 0 0" quat="0.5 -0.5 -0.5 -0.5"
+              mesh="dof_right_wheel" material="dof_right_wheel_material"/>
+      </body>
+
+      <!-- Link dof_left_wheel -->
+      <body name="dof_left_wheel" pos="0.1 0 0" quat="0.5 -0.5 -0.5 0.5">
+        <joint axis="0 0 1" name="left_wheel" range="-10 10"/>
+        <inertial pos="0 0.000847611 -0.0122091" mass="0.132904"
+                  fullinertia="5.27258e-05 5.43198e-05 9.33527e-05 0 0 8.77648e-07"/>
+        <geom type="mesh" class="visual" pos="0 0 0.1" quat="0.5 0.5 0.5 -0.5"
+              mesh="dof_left_wheel" material="dof_left_wheel_material"/>
+        <geom type="mesh" class="collision" pos="0 0 0.1" quat="0.5 0.5 0.5 -0.5"
+              mesh="dof_left_wheel" material="dof_left_wheel_material"/>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <!-- <velocity class="pyclops" name="act_right_wheel" joint="right_wheel"
+              kv="5" ctrlrange="-10 10"/>
+    <velocity class="pyclops" name="act_left_wheel" joint="left_wheel"
+              kv="5" ctrlrange="-10 10"/> -->
+    <motor name="act_right_wheel" joint="right_wheel" ctrlrange="-5 5"/>
+    <motor name="act_left_wheel"  joint="left_wheel"  ctrlrange="-5 5"/>
+
+  </actuator>
+
+  <sensor>
+    <!-- IMU: accelerometer and gyroscope on base_link -->
+    <accelerometer name="imu_accel" site="imu_site" noise="0.01"/>
+    <gyro          name="imu_gyro"  site="imu_site" noise="0.005"/>
+ 
+    <!-- Wheel encoders -->
+    <jointpos name="right_wheel_pos" joint="right_wheel" noise="0.001"/>
+    <jointpos name="left_wheel_pos"  joint="left_wheel"  noise="0.001"/>
+  </sensor>
+
+
+</mujoco>
