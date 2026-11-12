@@ -12,7 +12,7 @@ WHEEL_RADIUS = 0.075   # 7.5 cm diameter wheel
 
 class PyClopsEnv():
     def __init__(self):
-        self.model = mujoco.MjModel.from_xml_path("./pyclops/scene.xml")
+        self.model = mujoco.MjModel.from_xml_path("./balancing_bot/scene.xml")
         self.data = mujoco.MjData(self.model)
 
         # Previous encoder state for velocity estimation
