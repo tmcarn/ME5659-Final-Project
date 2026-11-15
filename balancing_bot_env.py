@@ -12,7 +12,7 @@ WHEEL_RADIUS = 0.075   # 7.5 cm diameter wheel
 
 class PyClopsEnv():
     def __init__(self):
-        self.model = mujoco.MjModel.from_xml_path("./pyclops/scene.xml")
+        self.model = mujoco.MjModel.from_xml_path("./balancing_bot/scene.xml")
         self.data = mujoco.MjData(self.model)
 
         # Previous encoder state for velocity estimation
@@ -183,16 +183,18 @@ class PIDController:
  
         output = self.kp * error + self.ki * self.integral + self.kd * derivative
         return np.clip(output, -self.limit, self.limit)
+    
  
 if __name__ == "__main__":
     env = PyClopsEnv()
     model = env.model
     data = env.data
 
-    # x_des = np.array([0.0, 0.0, 0.0, 0.0])
-    # K = np.array([1.4142, -2.2646, 2.5880, -1.2551])
+    ''' Originally these 4 lines were commented out'''
+    x_des = np.array([0.0, 0.0, 0.0, 0.0])
+    K = np.array([1.4142, -2.2646, 2.5880, -1.2551])
     # controller = LQRController(env)
-    # controller = PIDController(kp=20.0, ki=5, kd=8.0, limit=5.0)
+    controller = PIDController(kp=20.0, ki=5, kd=2.0, limit=5.0)
 
     theta_des = 0.0  # Desired pitch angle
 
@@ -207,20 +209,21 @@ if __name__ == "__main__":
         while viewer.is_running():
             # Read sensors and compute control
             state = env.estimate_state()
-            # F = env.lqr_control(state, x_des, K)
 
-            # u = controller.compute_control(state, x_des)
+            F = env.lqr_control(state, x_des, K)
+
+            # u = controller.compute_control(state, x_des, K)
             # data.ctrl[0] = u[0]
             # data.ctrl[1] = u[1]
 
             # Convert force to wheel torque
-            # tau = -F / WHEEL_RADIUS
+            tau = -F / WHEEL_RADIUS
 
-            # tau = controller.compute(theta_des - state[1], model.opt.timestep)  # Control based on pitch error only
+            tau = controller.compute(theta_des - state[1], model.opt.timestep)  # Control based on pitch error only
 
             # Apply to both wheels (same sign — check if this needs flipping)
-            # data.ctrl[0] = -tau
-            # data.ctrl[1] = tau
+            data.ctrl[0] = -tau
+            data.ctrl[1] = tau
 
             if step % print_interval == 0:
                 print(f"Time: {data.time:6.2f}  "
@@ -228,7 +231,7 @@ if __name__ == "__main__":
                     f"Theta: {state[1]:7.3f} "
                     f"x_dot: {state[2]:7.3f} "
                     f"theta_dot: {state[3]:7.3f} ")
-                    # f"U: {u[0]:7.3f} {u[1]:7.3f}")
+                    #f"U: {u[0]:7.3f} {u[1]:7.3f}")
 
             # Step physics ONCE
             mujoco.mj_step(model, data)
