@@ -1,5 +1,5 @@
-from pyclops_env import PyClopsEnv
-from pyclops_env import LQRController
+from balancing_bot_env import PyClopsEnv
+from balancing_bot_env import LQRController
 
 from scipy.optimize import minimize
 import mujoco

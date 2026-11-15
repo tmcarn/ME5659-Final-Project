@@ -1,0 +1,58 @@
+{
+  "params": {
+    "M": 1.17694,
+    "m": 0.265808,
+    "r": 0.03750000277302247,
+    "l": 0.07474520014035618,
+    "Ib": 0.0037820300000000104,
+    "Iw": 0.010186896368271022,
+    "g": 9.81
+  },
+  "extra": {
+    "timestep": 0.002,
+    "total_mass": 1.442748,
+    "Iw_without_armature": 0.00018689636827102265,
+    "pitch_axis_world": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "forward_dir_world": [
+      0.0,
+      -1.0,
+      0.0
+    ],
+    "wheels": {
+      "right": {
+        "mass": 0.132904,
+        "inertia_axle": 9.344818413551131e-05,
+        "armature": 0.005,
+        "radius": 0.0375000024258527,
+        "com_offset_from_axle": 0.0008476109999999981,
+        "frictionloss": 0.1,
+        "damping": 0.0,
+        "joint_sign": 1,
+        "gear": 1.0,
+        "ctrlrange": [
+          -5.0,
+          5.0
+        ]
+      },
+      "left": {
+        "mass": 0.132904,
+        "inertia_axle": 9.344818413551135e-05,
+        "armature": 0.005,
+        "radius": 0.03750000312019225,
+        "com_offset_from_axle": 0.0008476109999999981,
+        "frictionloss": 0.1,
+        "damping": 0.0,
+        "joint_sign": -1,
+        "gear": 1.0,
+        "ctrlrange": [
+          -5.0,
+          5.0
+        ]
+      }
+    }
+  }
+}
