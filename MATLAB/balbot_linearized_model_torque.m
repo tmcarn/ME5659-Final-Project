@@ -2,7 +2,7 @@
 syms phi theta dphi dtheta u real
 
 % Params
-syms M m r l Ib Iw g positive
+syms M m r l Ib Iw Ia g positive
 
 q = [phi; theta];
 dq = [dphi; dtheta];
@@ -13,9 +13,12 @@ dp_b = jacobian(p_b, q) * dq;
 
 % Kinetic Energy
 K_wheel = 0.5*m*(r*dphi)^2 + 0.5*Iw*dphi^2;
+% Motor rotor (armature / reflected inertia): spins RELATIVE to the body,
+% i.e. with the joint angle psi = phi - theta (this is how MuJoCo models it)
+K_motor = 0.5*Ia*(dphi - dtheta)^2;
 K_body = 0.5*M*dp_b.'*dp_b + 0.5*Ib*dtheta^2;
 
-K = K_wheel + K_body;
+K = K_wheel + K_motor + K_body;
 
 % Potential Energy
 V = M*g*l*cos(theta);
@@ -72,7 +75,7 @@ A0 = simplify(A0);
 B0 = simplify(B0);
 
 % --- Generate numeric functions of the parameters ---
-params = [M m r l Ib Iw g];
+params = [M m r l Ib Iw Ia g];
 
 matlabFunction(A0, 'File', 'balbot_A', 'Vars', {params});
 matlabFunction(B0, 'File', 'balbot_B', 'Vars', {params});
@@ -81,16 +84,17 @@ matlabFunction(B0, 'File', 'balbot_B', 'Vars', {params});
 matlabFunction(dx, 'File', 'balbot_dynamics', 'Vars', {x, u, params});
 
 
-% Parameter values (replace with yours)
-  M  = 1.17694  % kg
-  m  = 0.265808  % kg
+% Parameter values (from get_params.py / params.json)
+  M  = 1.17694  % kg      body mass
+  m  = 0.265808  % kg     both wheels
   r  = 0.0375  % m
   l  = 0.0747452  % m
   Ib = 0.00378203  % kg m^2
-  Iw = 0.0101869  % kg m^2
+  Iw = 0.000186896  % kg m^2   both wheels, WITHOUT armature
+  Ia = 0.002  % kg m^2         total armature (2 x 0.001 in robot.xml)
   g  = 9.81  % m/s^2
 
-p = [M m r l Ib Iw g];   % same order as `params` above
+p = [M m r l Ib Iw Ia g];   % same order as `params` above
 
 A = balbot_A(p);
 B = balbot_B(p);
@@ -105,7 +109,7 @@ eig(A)          % should show one unstable pole (inverted pendulum)
 rank(ctrb(A,B)) % should be 4 if controllable
 rank(obsv(A,C)) % should be 4 if observable
 
-poles = [-5.1; -5.2; -15.1; -15.2]; % desired closed-loop poles
+poles = [-5.1; -5.2; -25.1; -25.2]; % desired closed-loop poles
 K = place(A, B, poles) % state feedback gain
 
 

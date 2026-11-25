@@ -13,7 +13,10 @@
 
   <default>
     <default class="pyclops">
-      <joint frictionloss="0.1" armature="0.005"/>
+      <!-- armature = reflected motor rotor inertia N^2*J_rotor [kg m^2], acting on the
+           wheel joint (wheel angle RELATIVE to body). 0.001 is a placeholder estimate
+           (J_rotor ~1e-6, ~30:1 gearbox) - replace with real motor data. -->
+      <joint frictionloss="0.1" armature="0.001"/>
       <position kp="50" dampratio="1"/>
       <default class="visual">
         <geom type="mesh" contype="0" conaffinity="0" group="2"/>
@@ -52,7 +55,7 @@
 
       <!-- Link dof_right_wheel -->
       <body name="dof_right_wheel" pos="0 0 0" quat="0.5 0.5 0.5 0.5">
-        <joint axis="0 0 1" name="right_wheel" range="-10 10"/>
+        <joint axis="0 0 1" name="right_wheel"/>
         <inertial pos="0 -0.000847611 -0.0122091" mass="0.132904"
                   fullinertia="5.27258e-05 5.43198e-05 9.33527e-05 0 0 -8.77648e-07"/>
         <geom type="mesh" class="visual" pos="0 0 0" quat="0.5 -0.5 -0.5 -0.5"
@@ -63,7 +66,7 @@
 
       <!-- Link dof_left_wheel -->
       <body name="dof_left_wheel" pos="0.1 0 0" quat="0.5 -0.5 -0.5 0.5">
-        <joint axis="0 0 1" name="left_wheel" range="-10 10"/>
+        <joint axis="0 0 1" name="left_wheel"/>
         <inertial pos="0 0.000847611 -0.0122091" mass="0.132904"
                   fullinertia="5.27258e-05 5.43198e-05 9.33527e-05 0 0 8.77648e-07"/>
         <geom type="mesh" class="visual" pos="0 0 0.1" quat="0.5 0.5 0.5 -0.5"
@@ -79,19 +82,19 @@
               kv="5" ctrlrange="-10 10"/>
     <velocity class="pyclops" name="act_left_wheel" joint="left_wheel"
               kv="5" ctrlrange="-10 10"/> -->
-    <motor name="act_right_wheel" joint="right_wheel" ctrlrange="-5 5"/>
-    <motor name="act_left_wheel"  joint="left_wheel"  ctrlrange="-5 5"/>
+    <motor name="act_right_wheel" joint="right_wheel" ctrlrange="-10 10"/>
+    <motor name="act_left_wheel"  joint="left_wheel"  ctrlrange="-10 10"/>
 
   </actuator>
 
   <sensor>
     <!-- IMU: accelerometer and gyroscope on base_link -->
-    <accelerometer name="imu_accel" site="imu_site" noise="0.01"/>
-    <gyro          name="imu_gyro"  site="imu_site" noise="0.005"/>
+    <accelerometer name="imu_accel" site="imu_site" noise="0.00"/>
+    <gyro          name="imu_gyro"  site="imu_site" noise="0.00"/>
  
     <!-- Wheel encoders -->
-    <jointpos name="right_wheel_pos" joint="right_wheel" noise="0.001"/>
-    <jointpos name="left_wheel_pos"  joint="left_wheel"  noise="0.001"/>
+    <jointpos name="right_wheel_pos" joint="right_wheel" noise="0.00"/>
+    <jointpos name="left_wheel_pos"  joint="left_wheel"  noise="0.00"/>
   </sensor>
 
 

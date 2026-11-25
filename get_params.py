@@ -2,14 +2,18 @@
 Extract the planar balancing-bot parameters from the MuJoCo model.
 
 Matches the MATLAB model in MATLAB/balbot_linearized_model_torque.m:
-    p = [M m r l Ib Iw g]
+    p = [M m r l Ib Iw Ia g]
 
     M  : body (base_link) mass                                [kg]
     m  : total wheel mass (both wheels)                       [kg]
     r  : wheel radius                                         [m]
     l  : distance from wheel axle to body COM                 [m]
     Ib : body inertia about its COM, around the axle axis     [kg m^2]
-    Iw : total wheel inertia about the axle (incl. armature)  [kg m^2]
+    Iw : total wheel inertia about the axle (NO armature)     [kg m^2]
+    Ia : total joint armature (both wheels)                   [kg m^2]
+         MuJoCo applies armature to the joint DOF, i.e. the wheel angle
+         RELATIVE to the body (psi = phi - theta), so it must enter the
+         Lagrangian as 0.5*Ia*(dphi - dtheta)^2, not lumped into Iw.
     g  : gravity                                              [m/s^2]
 
 Run:  python get_params.py
@@ -101,7 +105,7 @@ def main():
     Ib = inertia_about_axis(model, data, body_id, axle)
 
     # --- Wheels ---
-    m = Iw = 0.0
+    m = Iw = Ia = 0.0
     radii, per_wheel = [], {}
     for side, d in w.items():
         bid, jid = d["body_id"], d["joint_id"]
@@ -114,7 +118,8 @@ def main():
         r_w = wheel_radius(model, data, bid, d["anchor"], d["axis"])
 
         m += mw
-        Iw += I_axle + armature
+        Iw += I_axle          # spins with absolute wheel angle phi
+        Ia += armature        # spins with relative joint angle psi = phi - theta
         radii.append(r_w)
         per_wheel[side] = dict(
             mass=mw,
@@ -132,11 +137,10 @@ def main():
     r = float(np.mean(radii))
     g = float(np.linalg.norm(model.opt.gravity))
 
-    params = dict(M=M, m=m, r=r, l=l, Ib=Ib, Iw=Iw, g=g)
+    params = dict(M=M, m=m, r=r, l=l, Ib=Ib, Iw=Iw, Ia=Ia, g=g)
     extra = dict(
         timestep=float(model.opt.timestep),
         total_mass=float(model.body_subtreemass[body_id]),
-        Iw_without_armature=sum(pw["inertia_axle"] for pw in per_wheel.values()),
         pitch_axis_world=axle.tolist(),
         forward_dir_world=forward.tolist(),
         wheels=per_wheel,
@@ -144,15 +148,15 @@ def main():
 
     # --- Report ---
     print(f"Model: {XML_PATH.relative_to(HERE)}\n")
-    print("Planar model parameters  (p = [M m r l Ib Iw g])")
-    units = dict(M="kg", m="kg", r="m", l="m", Ib="kg m^2", Iw="kg m^2", g="m/s^2")
+    print("Planar model parameters  (p = [M m r l Ib Iw Ia g])")
+    units = dict(M="kg", m="kg", r="m", l="m", Ib="kg m^2", Iw="kg m^2", Ia="kg m^2",
+                 g="m/s^2")
     for k, v in params.items():
         print(f"  {k:<3}= {v:.6g}  {units[k]}")
 
     print("\nDetails")
     print(f"  timestep          = {extra['timestep']} s")
     print(f"  total mass        = {extra['total_mass']:.6g} kg")
-    print(f"  Iw w/o armature   = {extra['Iw_without_armature']:.6g} kg m^2")
     print(f"  pitch axis (world)= {np.round(axle, 4)}   (+theta = rotation about this)")
     print(f"  forward (world)   = {np.round(forward, 4)}   (direction of +phi travel)")
     for side, pw in per_wheel.items():
@@ -162,8 +166,8 @@ def main():
 
     print("\nMATLAB:")
     print("  M = {M:.6g}; m = {m:.6g}; r = {r:.6g}; l = {l:.6g}; "
-          "Ib = {Ib:.6g}; Iw = {Iw:.6g}; g = {g:.6g};".format(**params))
-    print("  p = [M m r l Ib Iw g];")
+          "Ib = {Ib:.6g}; Iw = {Iw:.6g}; Ia = {Ia:.6g}; g = {g:.6g};".format(**params))
+    print("  p = [M m r l Ib Iw Ia g];")
 
     out = HERE / "params.json"
     out.write_text(json.dumps(dict(params=params, extra=extra), indent=2))

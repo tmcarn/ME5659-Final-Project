@@ -1,3 +1,6 @@
+from math import tau
+import math
+
 import mujoco
 import mujoco.viewer
 import time
@@ -5,9 +8,11 @@ import numpy as np
 
 from scipy.linalg import solve_discrete_are
 
+from data_logger import DataLogger
+
 # Encoder resolution
 TICKS_PER_REV = 1024
-WHEEL_RADIUS = 0.075   # 7.5 cm diameter wheel
+WHEEL_RADIUS = 0.0375   # m (7.5 cm diameter wheel)
 
 
 class PyClopsEnv():
@@ -34,23 +39,31 @@ class PyClopsEnv():
 
     def get_encoders(self):
         """Read simulated wheel encoders (position only) and derive velocity."""
-        right_pos = self.data.sensor("right_wheel_pos").data[0]
-        left_pos = self.data.sensor("left_wheel_pos").data[0]
-        t = self.data.time
+        # right_pos = self.data.sensor("right_wheel_pos").data[0]
+        # left_pos = self.data.sensor("left_wheel_pos").data[0]
+        # t = self.data.time
 
-        # Derive velocity via finite difference
-        dt = t - self.prev_time
-        if dt > 0:
-            right_vel = (right_pos - self.prev_right_pos) / dt
-            left_vel = (left_pos - self.prev_left_pos) / dt
-        else:
-            right_vel = 0.0
-            left_vel = 0.0
+        # # Derive velocity via finite difference
+        # dt = t - self.prev_time
+        # if dt > 0:
+        #     right_vel = (right_pos - self.prev_right_pos) / dt
+        #     left_vel = (left_pos - self.prev_left_pos) / dt
+        # else:
+        #     right_vel = 0.0
+        #     left_vel = 0.0
 
-        # Update previous state
-        self.prev_right_pos = right_pos
-        self.prev_left_pos = left_pos
-        self.prev_time = t
+        # # Update previous state
+        # self.prev_right_pos = right_pos
+        # self.prev_left_pos = left_pos
+        # self.prev_time = t
+
+        print(f"q = {self.data.qpos}")
+        print(f"dq = {self.data.qvel}")
+
+        right_pos = self.data.qpos[-2]
+        left_pos = self.data.qpos[-1]
+        right_vel = self.data.qvel[-2]
+        left_vel = self.data.qvel[-1]
 
         return right_pos, left_pos, right_vel, left_vel
 
@@ -77,10 +90,10 @@ class PyClopsEnv():
         # Extract pitch (rotation about x-axis) from quaternion
         pitch = np.arctan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y))
  
-        # Pitch rate via finite difference
-        dt = self.model.opt.timestep
-        pitch_rate = (pitch - self.prev_pitch) / dt if dt > 0 else 0.0
-        self.prev_pitch = pitch
+        # Pitch rate directly from freejoint qvel: [vx, vy, vz, wx, wy, wz]
+        # Linear part is in the world frame; angular part (wx, wy, wz) is in the body frame.
+        # Pitch is rotation about x, so the rate is wx.
+        pitch_rate = self.data.qvel[3]
  
         return pitch, pitch_rate
 
@@ -90,75 +103,32 @@ class PyClopsEnv():
         accel, gyro = self.get_imu()
         right_pos, left_pos, right_vel, left_vel = self.get_encoders()
 
+        print(f"RIGHT POS: {right_pos:.4f}, LEFT POS: {left_pos:.4f}")
         dt = self.model.opt.timestep
-
-        # Forward position & velocity (average of both wheels)
-        x = WHEEL_RADIUS * (right_pos + left_pos) / 2.0
-        dx = WHEEL_RADIUS * (right_vel + left_vel) / 2.0
 
         # Pitch from complementary filter
         theta, dtheta = self.estimate_pitch(accel, gyro, dt)
 
-        # Pitch rate directly from gyro
-        # theta_dot = gyro[1]
+        # Encoders measure wheel angle RELATIVE to the body (psi). The model state
+        # is the ABSOLUTE wheel angle phi (x = r*phi), so phi = psi + theta.
+        # Right joint axis = +pitch axis, left joint axis is flipped (see params.json
+        # joint_sign), so average right - left.
+        psi = (right_pos - left_pos) / 2.0
+        dpsi = (right_vel - left_vel) / 2.0
 
-        return np.array([x, theta, dx, dtheta])
+        # Absolute wheel angle (MATLAB state), x = r*phi
+        phi = psi + theta
+        dphi = dpsi + dtheta
+
+        print(f'RAW STATE: psi={psi}, dpsi={dpsi}, theta={theta}, dtheta={dtheta}')
+
+        return np.array([phi, theta, dphi, dtheta])
 
     def lqr_control(self, state, x_des, K):
         """Compute control input: u = -K @ (state - x_des)"""
         error = state - x_des
         u = -K @ error
         return u
-    
-class LQRController:
-    def __init__(self, env):
-        self.env = env
-        self.nu = env.model.nu # Number of Actuated DOFs (2)
-        self.nv = env.model.nv # Total DOFs (8) SE(3) + 2 wheels
-
-        self.A, self.B = self.linearize_dynamics()
-        self.K = self.compute_lqr_gain(Q=np.diag([20, 100, 10, 100]), R=np.diag([1, 1]))
-        print("LQR Gain K:\n", self.K)
-
-    def linearize_dynamics(self):
-        # Allocate Jacobians
-        # A is (2*nv x 2*nv), B is (2*nv x nu)
-        A_full = np.zeros((2 * self.nv, 2 * self.nv))
-        B_full = np.zeros((2 * self.nv, self.nu))
-
-        eps = 1e-6
-        flg_centered = 1
- 
-        mujoco.mjd_transitionFD(self.env.model, self.env.data, eps, flg_centered, A_full, B_full, None, None)
-
-
-        # Index mapping for our 4-state LQR
-        # In the 2*nv state vector: first nv entries = position, next nv = velocity
-        idx_x = 0          # forward position (dof 0)
-        idx_theta = 4      # pitch angle (dof 4, rotation about -axis)
-        idx_x_dot = self.nv + 0
-        idx_theta_dot = self.nv + 4
-    
-        state_idx = [idx_x, idx_theta, idx_x_dot, idx_theta_dot]
-
-            # Extract the 4x4 and 4x2 sub-matrices
-        A = A_full[np.ix_(state_idx, state_idx)]
-        B = B_full[np.ix_(state_idx, range(self.nu))]
-
-        return A, B
-    
-    def compute_lqr_gain(self, Q, R):
-        """Solve the continuous-time Algebraic Riccati Equation for LQR gain."""
-        P = solve_discrete_are(self.A, self.B, Q, R)
-        self.K = np.linalg.inv(R + self.B.T @ P @ self.B) @ (self.B.T @ P @ self.A)
-
-        return self.K
-    
-    def compute_control(self, state, x_des, K):
-        error = state - x_des
-        u = -K @ error
-        return u
-
 
 class PIDController:
     def __init__(self, kp, ki, kd, limit=5.0):
@@ -183,6 +153,22 @@ class PIDController:
  
         output = self.kp * error + self.ki * self.integral + self.kd * derivative
         return np.clip(output, -self.limit, self.limit)
+
+
+class LinearStateFeedbackController:
+    '''
+    A simple linear state feedback controller: u = -K @ (x - x_des)
+    where K is the gain matrix, x is the current state, and x_des is the desired state.
+
+    (Could be LQR or Pole placement gains, etc.)
+    '''
+    def __init__(self, K, limit=5.0):
+        self.K = K
+        self.limit = limit
+
+    def compute_control(self, state):
+        u = -self.K @ state
+        return np.clip(u, -self.limit, self.limit)
     
  
 if __name__ == "__main__":
@@ -190,52 +176,65 @@ if __name__ == "__main__":
     model = env.model
     data = env.data
 
-    ''' Originally these 4 lines were commented out'''
-    x_des = np.array([0.0, 0.0, 0.0, 0.0])
-    K = np.array([1.4142, -2.2646, 2.5880, -1.2551])
-    # controller = LQRController(env)
-    controller = PIDController(kp=20.0, ki=5, kd=2.0, limit=5.0)
+    # x_des = np.array([0.0, 0.0, 0.0, 0.0])
+    # From MATLAB/balbot_linearized_model_torque.m, poles [-5.1 -5.2 -25.1 -25.2],
+    # state [phi, theta, dphi, dtheta], Ia = 0.002. Recompute if armature changes!
+    K = np.array([-0.9798, -13.8461, -0.4585, -1.6893])
+    TORQUE_LIMIT = 20.0   # total torque = 2 wheels x ctrlrange 10
+    controller = LinearStateFeedbackController(K, limit=TORQUE_LIMIT)
+    # controller = PIDController(kp=20.0, ki=5, kd=2.0, limit=5.0)
 
     theta_des = 0.0  # Desired pitch angle
 
+    logger = DataLogger(state_names=("x", "theta", "x_dot", "theta_dot"),
+                        output_names=("tau",))
+
     # --- Main loop ---
-    with mujoco.viewer.launch_passive(model, data) as viewer:
-        step = 0
-        print_interval = int(0.1 / model.opt.timestep)
+    try:
+        with mujoco.viewer.launch_passive(model, data) as viewer:
+            step = 0
+            print_interval = 1 # int(0.1 / model.opt.timestep)
 
-        print(f"{'time':>6s}  {'x':>7s} {'theta':>7s} {'x_dot':>7s} {'th_dot':>7s}  {'F':>7s} {'tau':>7s}")
-        print("-" * 65)
+            while viewer.is_running():
+                # Read sensors and compute control
+                state = env.estimate_state()
 
-        while viewer.is_running():
-            # Read sensors and compute control
-            state = env.estimate_state()
+                #F = env.lqr_control(state, x_des, K)
 
-            F = env.lqr_control(state, x_des, K)
+                # u = controller.compute_control(state, x_des, K)
+                # data.ctrl[0] = u[0]
+                # data.ctrl[1] = u[1]
 
-            # u = controller.compute_control(state, x_des, K)
-            # data.ctrl[0] = u[0]
-            # data.ctrl[1] = u[1]
+                # Convert force to wheel torque
+                #tau = -F / WHEEL_RADIUS
 
-            # Convert force to wheel torque
-            tau = -F / WHEEL_RADIUS
+                #tau = controller.compute(theta_des - state[1], model.opt.timestep)  # Control based on pitch error only
 
-            tau = controller.compute(theta_des - state[1], model.opt.timestep)  # Control based on pitch error only
+                tau = controller.compute_control(state)  # Control based on full state feedback
 
-            # Apply to both wheels (same sign — check if this needs flipping)
-            data.ctrl[0] = -tau
-            data.ctrl[1] = tau
+                logger.log(data.time, state, tau)
 
-            if step % print_interval == 0:
-                print(f"Time: {data.time:6.2f}  "
-                        f"x: {state[0]:7.3f} "
-                    f"Theta: {state[1]:7.3f} "
-                    f"x_dot: {state[2]:7.3f} "
-                    f"theta_dot: {state[3]:7.3f} ")
-                    #f"U: {u[0]:7.3f} {u[1]:7.3f}")
+                if abs(tau) >= TORQUE_LIMIT:
+                    print(f"Torque saturated at {tau:.2f} Nm")
+                # u is total torque: split between wheels, left joint axis is flipped
+                data.ctrl[0] = tau / 2
+                data.ctrl[1] = - tau / 2
 
-            # Step physics ONCE
-            mujoco.mj_step(model, data)
+                if step % print_interval == 0:
+                    print(f"Time: {data.time:6.2f}  "
+                            f"x: {state[0]:7.3f} "
+                        f"Theta: {state[1]:7.3f} "
+                        f"x_dot: {state[2]:7.3f} "
+                        f"theta_dot: {state[3]:7.3f} "
+                        f"Tau: {tau:7.3f}")
+                        #f"U: {u[0]:7.3f} {u[1]:7.3f}")
 
-            step += 1
-            viewer.sync()
-            time.sleep(model.opt.timestep)
+                # Step physics ONCE
+                mujoco.mj_step(model, data)
+
+                step += 1
+                viewer.sync()
+                time.sleep(model.opt.timestep * 1)
+    finally:
+        if len(logger):
+            logger.plot()  # Save plot of logged data
