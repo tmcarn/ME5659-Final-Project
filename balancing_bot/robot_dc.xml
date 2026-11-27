@@ -1,0 +1,105 @@
+<?xml version="1.0" ?>
+<!-- Pyclops robot - MuJoCo model -->
+<!-- Originally generated using onshape-to-robot -->
+<!-- Onshape https://cad.onshape.com/documents/6f845d5dab9c190070bfae36/w/80e382d598c8042090f96ef2/e/c831616fce6e428b6b7712d2 -->
+<mujoco model="pyclops">
+
+  <compiler angle="radian" meshdir="assets" autolimits="true"/>
+
+  <option gravity="0 0 -9.81" timestep="0.002"/>
+
+  <statistic center="0.05 0 0.05" extent="0.3"/>
+
+
+  <default>
+    <default class="pyclops">
+      <!-- armature = reflected motor rotor inertia N^2*J_rotor [kg m^2], acting on the
+           wheel joint (wheel angle RELATIVE to body). 0.001 is a placeholder estimate
+           (J_rotor ~1e-6, ~30:1 gearbox) - replace with real motor data. -->
+      <joint frictionloss="0.1" armature="0.001"/>
+      <position kp="50" dampratio="1"/>
+      <default class="visual">
+        <geom type="mesh" contype="0" conaffinity="0" group="2"/>
+      </default>
+      <default class="collision">
+        <geom group="3"/>
+      </default>
+    </default>
+  </default>
+
+  <asset>
+    <mesh file="base_link.stl"/>
+    <mesh file="dof_right_wheel.stl"/>
+    <mesh file="dof_left_wheel.stl"/>
+    <material name="base_link_material" rgba="0.615686 0.811765 0.929412 1"/>
+    <material name="dof_right_wheel_material" rgba="0.647059 0.647059 0.647059 1"/>
+    <material name="dof_left_wheel_material" rgba="0.647059 0.647059 0.647059 1"/>
+  </asset>
+
+  <worldbody>
+
+    <!-- Link base_link -->
+    <body name="base_link" pos="0 0 0.05" quat="1 0 0 0" childclass="pyclops">
+      <freejoint name="base_link_freejoint"/>
+      <inertial pos="0.05 0.000122352 0.0747451" mass="1.17694"
+                fullinertia="0.00378203 0.00453442 0.00121277 0 0 -7.23671e-06"/>
+
+      <!-- IMU site (mounted on the body frame) -->
+      <site name="imu_site" pos="0.05 0 0.075" size="0.005"/>
+
+      <!-- Part base_link -->
+      <geom type="mesh" class="visual" pos="0 0 0" quat="1 0 0 0"
+            mesh="base_link" material="base_link_material"/>
+      <geom type="mesh" class="collision" pos="0 0 0" quat="1 0 0 0"
+            mesh="base_link" material="base_link_material"/>
+
+      <!-- Link dof_right_wheel -->
+      <body name="dof_right_wheel" pos="0 0 0" quat="0.5 0.5 0.5 0.5">
+        <!-- damping = viscous friction per wheel (b/2, b = 0.001 total) -->
+        <joint axis="0 0 1" name="right_wheel" damping="0.0005"/>
+        <inertial pos="0 -0.000847611 -0.0122091" mass="0.132904"
+                  fullinertia="5.27258e-05 5.43198e-05 9.33527e-05 0 0 -8.77648e-07"/>
+        <geom type="mesh" class="visual" pos="0 0 0" quat="0.5 -0.5 -0.5 -0.5"
+              mesh="dof_right_wheel" material="dof_right_wheel_material"/>
+        <geom type="mesh" class="collision" pos="0 0 0" quat="0.5 -0.5 -0.5 -0.5"
+              mesh="dof_right_wheel" material="dof_right_wheel_material"/>
+      </body>
+
+      <!-- Link dof_left_wheel -->
+      <body name="dof_left_wheel" pos="0.1 0 0" quat="0.5 -0.5 -0.5 0.5">
+        <joint axis="0 0 1" name="left_wheel" damping="0.0005"/>
+        <inertial pos="0 0.000847611 -0.0122091" mass="0.132904"
+                  fullinertia="5.27258e-05 5.43198e-05 9.33527e-05 0 0 8.77648e-07"/>
+        <geom type="mesh" class="visual" pos="0 0 0.1" quat="0.5 0.5 0.5 -0.5"
+              mesh="dof_left_wheel" material="dof_left_wheel_material"/>
+        <geom type="mesh" class="collision" pos="0 0 0.1" quat="0.5 0.5 0.5 -0.5"
+              mesh="dof_left_wheel" material="dof_left_wheel_material"/>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <!-- DC gearmotor, ctrl = VOLTAGE [V] (inductance neglected).
+         force = gain*V + bias_v*qvel, with qvel = dpsi (wheel rate RELATIVE to body)
+           gain   =  Ng*Kt/Rm        = 30*0.01/2      = 0.15   N m / V
+           bias_v = -Ng^2*Kt*Kb/Rm   = -900*1e-4/2    = -0.045 N m s / rad  (back-EMF)
+         PLACEHOLDER motor constants: keep in sync with
+         MATLAB/balbot_linearized_model_dc.m (Ng=30, Kt=Kb=0.01, Rm=2, Vmax=12.6). -->
+    <general name="act_right_wheel" joint="right_wheel" ctrlrange="-12.6 12.6"
+             gainprm="0.15" biastype="affine" biasprm="0 0 -0.045"/>
+    <general name="act_left_wheel"  joint="left_wheel"  ctrlrange="-12.6 12.6"
+             gainprm="0.15" biastype="affine" biasprm="0 0 -0.045"/>
+  </actuator>
+
+  <sensor>
+    <!-- IMU: accelerometer and gyroscope on base_link -->
+    <accelerometer name="imu_accel" site="imu_site" noise="0.00"/>
+    <gyro          name="imu_gyro"  site="imu_site" noise="0.00"/>
+ 
+    <!-- Wheel encoders -->
+    <jointpos name="right_wheel_pos" joint="right_wheel" noise="0.00"/>
+    <jointpos name="left_wheel_pos"  joint="left_wheel"  noise="0.00"/>
+  </sensor>
+
+
+</mujoco>

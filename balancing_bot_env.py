@@ -16,8 +16,8 @@ WHEEL_RADIUS = 0.0375   # m (7.5 cm diameter wheel)
 
 
 class PyClopsEnv():
-    def __init__(self):
-        self.model = mujoco.MjModel.from_xml_path("./balancing_bot/scene.xml")
+    def __init__(self, xml_path="./balancing_bot/scene.xml"):
+        self.model = mujoco.MjModel.from_xml_path(xml_path)
         self.data = mujoco.MjData(self.model)
 
         # Previous encoder state for velocity estimation
@@ -130,6 +130,17 @@ class PyClopsEnv():
         u = -K @ error
         return u
 
+    def apply_control(self, u, dc_motor):
+        """Send the controller output to both wheels (left joint axis is flipped).
+
+        dc_motor=True : u is the motor VOLTAGE, applied in full to each motor
+                        (the 2x for two motors is already inside the model).
+        dc_motor=False: u is the TOTAL wheel torque, split between the wheels.
+        """
+        per_wheel = u if dc_motor else u / 2.0
+        self.data.ctrl[0] = per_wheel
+        self.data.ctrl[1] = -per_wheel
+
 class PIDController:
     def __init__(self, kp, ki, kd, limit=5.0):
         self.kp = kp
@@ -168,26 +179,40 @@ class LinearStateFeedbackController:
 
     def compute_control(self, state):
         u = -self.K @ state
-        return np.clip(u, -self.limit, self.limit)
-    
- 
+        return float(np.clip(u, -self.limit, self.limit))
+
+
+# True : robot_dc.xml, ctrl = voltage, DC motor (back-EMF) modeled in the actuator
+# False: robot.xml,    ctrl = torque
+USE_DC_MOTOR = True
+
 if __name__ == "__main__":
-    env = PyClopsEnv()
+    # State for both: [phi, theta, dphi, dtheta], poles [-5.1 -5.2 -25.1 -25.2], Ia = 0.002.
+    # Recompute K if armature or motor constants change!
+    if USE_DC_MOTOR:
+        # From MATLAB/balbot_linearized_model_dc.m (Ng=30, Kt=Kb=0.01, Rm=2, b=0.001)
+        xml_path = "./balancing_bot/scene_dc.xml"
+        K = np.array([-3.2661, -46.1537, -1.8316, -5.3276])
+        U_LIMIT = 12.6        # V, battery voltage (= actuator ctrlrange)
+        u_name, u_unit = "V", "V"
+    else:
+        # From MATLAB/balbot_linearized_model_torque.m
+        xml_path = "./balancing_bot/scene.xml"
+        K = np.array([-0.9798, -13.8461, -0.4585, -1.6893])
+        U_LIMIT = 20.0        # N m, total torque = 2 wheels x ctrlrange 10
+        u_name, u_unit = "Tau", "Nm"
+
+    env = PyClopsEnv(xml_path)
     model = env.model
     data = env.data
 
-    # x_des = np.array([0.0, 0.0, 0.0, 0.0])
-    # From MATLAB/balbot_linearized_model_torque.m, poles [-5.1 -5.2 -25.1 -25.2],
-    # state [phi, theta, dphi, dtheta], Ia = 0.002. Recompute if armature changes!
-    K = np.array([-0.9798, -13.8461, -0.4585, -1.6893])
-    TORQUE_LIMIT = 20.0   # total torque = 2 wheels x ctrlrange 10
-    controller = LinearStateFeedbackController(K, limit=TORQUE_LIMIT)
+    controller = LinearStateFeedbackController(K, limit=U_LIMIT)
     # controller = PIDController(kp=20.0, ki=5, kd=2.0, limit=5.0)
 
     theta_des = 0.0  # Desired pitch angle
 
     logger = DataLogger(state_names=("x", "theta", "x_dot", "theta_dot"),
-                        output_names=("tau",))
+                        output_names=(u_name,))
 
     # --- Main loop ---
     try:
@@ -210,15 +235,13 @@ if __name__ == "__main__":
 
                 #tau = controller.compute(theta_des - state[1], model.opt.timestep)  # Control based on pitch error only
 
-                tau = controller.compute_control(state)  # Control based on full state feedback
+                u = controller.compute_control(state)  # Control based on full state feedback
 
-                logger.log(data.time, state, tau)
+                logger.log(data.time, state, u)
 
-                if abs(tau) >= TORQUE_LIMIT:
-                    print(f"Torque saturated at {tau:.2f} Nm")
-                # u is total torque: split between wheels, left joint axis is flipped
-                data.ctrl[0] = tau / 2
-                data.ctrl[1] = - tau / 2
+                if abs(u) >= U_LIMIT:
+                    print(f"{u_name} saturated at {u:.2f} {u_unit}")
+                env.apply_control(u, USE_DC_MOTOR)
 
                 if step % print_interval == 0:
                     print(f"Time: {data.time:6.2f}  "
@@ -226,7 +249,7 @@ if __name__ == "__main__":
                         f"Theta: {state[1]:7.3f} "
                         f"x_dot: {state[2]:7.3f} "
                         f"theta_dot: {state[3]:7.3f} "
-                        f"Tau: {tau:7.3f}")
+                        f"{u_name}: {u:7.3f}")
                         #f"U: {u[0]:7.3f} {u[1]:7.3f}")
 
                 # Step physics ONCE
